@@ -1,0 +1,17 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.*
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+# packaging
+dist/
+build/
+
+
+discord-token.txt
+discord-token.txt
