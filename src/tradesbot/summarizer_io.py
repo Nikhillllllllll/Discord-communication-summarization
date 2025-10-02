@@ -333,7 +333,7 @@ def save_summary_to_gcs(
     return urls
 
 
-def process_and_save(bucket_name: str, date: str, use_ai: bool = True) -> bool:
+def process_and_save(bucket_name: str, date: str, use_ai: bool = True, save_to_notion: bool = False) -> bool:
     """
     Complete workflow: load messages, analyze, and save summaries.
     
@@ -341,6 +341,7 @@ def process_and_save(bucket_name: str, date: str, use_ai: bool = True) -> bool:
         bucket_name: GCS bucket name
         date: Date string (YYYY-MM-DD)
         use_ai: Whether to use Gemini AI for enhanced analysis
+        save_to_notion: Whether to save to Notion database
         
     Returns:
         True if successful, False otherwise
@@ -386,6 +387,20 @@ def process_and_save(bucket_name: str, date: str, use_ai: bool = True) -> bool:
         for format_type, url in urls.items():
             print(f"   {format_type.upper()}: {url}")
         
+        # Save to Notion (if enabled)
+        if save_to_notion:
+            try:
+                from tradesbot.notion_writer import create_summary_page
+                log.info("Saving to Notion...")
+                
+                notion_result = create_summary_page(analysis, ai_analysis or {}, date)
+                
+                print("\nNotion Page:")
+                print(f"   URL: {notion_result['page_url']}")
+            except Exception as e:
+                log.error(f"Failed to save to Notion: {e}")
+                print(f"\nWARNING: Notion save failed: {e}")
+        
         if ai_analysis:
             print("\nAI-enhanced summary generated with Gemini")
         
@@ -400,6 +415,9 @@ if __name__ == "__main__":
     # CLI interface
     import os
     import sys
+    from dotenv import load_dotenv
+    
+    load_dotenv()  # Load environment variables from .env file
     
     logging.basicConfig(
         level=logging.INFO,
@@ -409,11 +427,12 @@ if __name__ == "__main__":
     bucket_name = os.getenv("GCS_BUCKET")
     if not bucket_name:
         print("Error: GCS_BUCKET environment variable not set")
-        print("Usage: export GCS_BUCKET='your-bucket-name' && python -m tradesbot.summarizer_io [DATE] [--no-ai]")
+        print("Usage: export GCS_BUCKET='your-bucket-name' && python -m tradesbot.summarizer_io [DATE] [--no-ai] [--save-to-notion]")
         sys.exit(1)
     
-    # Check for --no-ai flag
+    # Parse flags
     use_ai = "--no-ai" not in sys.argv
+    save_to_notion = "--save-to-notion" in sys.argv
     
     # Get date from command line or environment, or use most recent
     date_args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
@@ -430,11 +449,15 @@ if __name__ == "__main__":
             date = dates[-1]
             print(f"No date specified, using most recent: {date}")
     
+    # Display configuration
     if use_ai:
         print("AI analysis enabled (Gemini)")
     else:
         print("Basic analysis only (no AI)")
     
+    if save_to_notion:
+        print("Notion saving enabled")
+    
     # Process and save
-    success = process_and_save(bucket_name, date, use_ai=use_ai)
+    success = process_and_save(bucket_name, date, use_ai=use_ai, save_to_notion=save_to_notion)
     sys.exit(0 if success else 1)

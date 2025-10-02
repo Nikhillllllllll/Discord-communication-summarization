@@ -78,6 +78,32 @@ python -c "from tradesbot.uploader import upload_all_days; upload_all_days()"
    gcloud auth application-default login
    ```
 
+### Setup Notion (Optional)
+
+1. **Create Notion Integration**
+   - Go to https://www.notion.so/my-integrations
+   - Click "New integration"
+   - Give it a name (e.g., "Discord Trading Bot")
+   - Copy the **Internal Integration Token**
+
+2. **Create Database**
+   - Create a new Database in Notion
+   - Add these properties:
+     - `Name` (Title) - Auto-created
+     - `Date` (Date)
+     - `Total Messages` (Number)
+     - `Unique Authors` (Number)
+     - `Top Tickers` (Multi-select)
+     - `AI Analysis` (Checkbox)
+   - Click "..." → "Add connections" → Select your integration
+   - Copy the **Database ID** from URL: `notion.so/workspace/DATABASE_ID?v=...`
+
+3. **Set Environment Variables**
+   ```bash
+   export NOTION_API_TOKEN="secret_abc123..."
+   export NOTION_DATABASE_ID="abc123def456..."
+   ```
+
 ### Run Summarizer
 
 ```bash
@@ -93,6 +119,9 @@ DAY=2025-10-02 python -m tradesbot.summarizer_io
 
 # Run without AI (basic stats only)
 python -m tradesbot.summarizer_io --no-ai
+
+# Save to Notion (in addition to GCS)
+python -m tradesbot.summarizer_io --save-to-notion
 ```
 
 ### What the AI Analyzes
@@ -106,10 +135,16 @@ python -m tradesbot.summarizer_io --no-ai
 
 ### Output Files
 
-Summaries saved to `gs://your-bucket/summaries/YYYY-MM-DD.*`:
+**GCS Storage** - Summaries saved to `gs://your-bucket/summaries/YYYY-MM-DD.*`:
 - `.json` - Structured data with basic stats + AI insights
 - `.md` - Markdown formatted for easy reading
 - `.txt` - Plain text summary
+
+**Notion Database** (optional with `--save-to-notion`):
+- Creates a new page in your database with rich formatting
+- Properties: Date, Total Messages, Authors, Top Tickers, AI Analysis flag
+- Organized sections: Overview, Watchlist, Ticker Analysis, Themes, Insights
+- Filterable and searchable
 
 ---
 
@@ -228,6 +263,7 @@ discord-trades-mvp/
 │       ├── gemini_analyzer.py   # Gemini prompt + analysis helpers
 │       ├── logging_config.py    # Structured logging setup
 │       ├── main.py              # Ingestion entry point
+│       ├── notion_writer.py     # Notion database integration
 │       ├── storage.py           # Local JSONL writer
 │       ├── summarizer_io.py     # Summarizer workflow
 │       └── uploader.py          # Pushes /tmp/ingest to GCS
@@ -259,6 +295,8 @@ GCS_BUCKET=your-bucket              # Storage bucket
 GCP_PROJECT_ID=your-project-id      # GCP project
 GCP_REGION=us-central1              # Vertex AI region (optional)
 DAY=2025-10-02                      # Date to summarize (optional)
+NOTION_API_TOKEN=secret_abc123...   # Notion integration token (optional)
+NOTION_DATABASE_ID=abc123def456...  # Notion database ID (optional)
 ```
 
 ---
