@@ -79,18 +79,27 @@ def build_analysis_prompt(messages: list[dict[str, Any]], basic_stats: dict[str,
 ## Messages
 {messages_str}
 
-## Your Task
-Analyze these trading discussions and provide:
+You are an expert financial analyst and trading discussion summarizer with deep knowledge of stock markets, technical analysis, sentiment indicators, and community dynamics in trading forums. Your goal is to comprehensively analyze a provided set of trading group conversations (which may span multiple threads, messages, or timestamps) focused on specific stock tickers. Treat the entire input as a cohesive dataset of discussions, extracting patterns, cross-references, and evolving narratives across all messages to build a holistic understanding. Intelligently select and attach the most relevant, representative message excerpts (e.g., 1-2 sentences or key phrases) to support each analytical point—prioritize brevity, context (include timestamp/user if available), and impact (e.g., from high-engagement or expert users). Use these attachments inline or as footnotes to ground your analysis without overwhelming the structure.
 
-1. **Sentiment Analysis**: For each frequently mentioned ticker, what's the overall sentiment? (Bullish/Bearish/Neutral/Mixed)
+Input: [Insert the full conversation transcripts or messages here, formatted as a list of entries like: "Timestamp: 2025-10-01 14:32 | User: TraderX | Message: 'TSLA breaking $250 on EV news, long calls incoming! 🚀'". If no metadata, infer or note as "Message [ID]".]
 
-2. **Key Themes**: What are the main topics or concerns being discussed? (earnings, technical patterns, news events, etc.)
+Output a structured report in the following format, ensuring your analysis is precise, evidence-based, and technically rigorous. Use trading terminology accurately (e.g., RSI, support levels, earnings beats, short squeezes) and avoid speculation—base everything on the content provided. If a ticker is mentioned infrequently or superficially, note it but prioritize depth over breadth. For attachments: Quote directly, attribute (e.g., "[UserX, 2025-10-01]"), and limit to 50 words per excerpt unless pivotal.
 
-3. **Notable Insights**: Any specific actionable insights, trade ideas, or risk warnings mentioned?
+1. **Ticker Inventory**: List all unique tickers mentioned (e.g., AAPL, TSLA), grouped by frequency (high: >10 mentions; medium: 4-10; low: <4). For each, briefly note the primary context (e.g., "TSLA: Earnings speculation and EV market share") and attach 1 representative message excerpt.
 
-4. **Community Conviction**: Which tickers have the strongest conviction from the community? Look for multiple mentions, detailed analysis, or experienced traders weighing in.
+2. **Sentiment Analysis**: For each ticker with medium+ frequency, classify the overall sentiment as Bullish (prevalent positive catalysts like buy calls or price targets), Bearish (warnings of downside risks or sells), Neutral (balanced views), or Mixed (conflicting opinions). Provide a sentiment score (e.g., +0.7 for strongly bullish on a -1 to +1 scale) derived from keyword polarity, emoji usage, and tone. Support with 1-2 example quotes per ticker, each with intelligent attachment (e.g., the most vivid bullish post).
 
-5. **Executive Summary**: A 2-3 sentence summary of the most important takeaways for someone who wants to quickly understand what happened.
+3. **Key Themes**: Identify and rank the top 3-5 overarching themes across the conversations (e.g., "Q3 Earnings Expectations," "Technical Breakouts," "Macroeconomic Headwinds like Fed Rate Cuts"). For each theme, explain its relevance to the tickers involved, with sub-bullets on supporting evidence (e.g., "Mentioned in 15+ posts: Analysts citing EPS beats for NVDA"). Attach 1 key message excerpt per theme to illustrate. Highlight any chronological shifts (e.g., "Initial hype on news event faded into caution post-FOMC"), referencing attached messages for timeline.
+
+4. **Notable Insights**: Extract 4-6 actionable items, such as trade ideas (e.g., "Long TSLA above $250 with stop at $240"), risk warnings (e.g., "Overbought RSI>80 signals pullback for AMD"), or unique angles (e.g., "Insider buying rumors for GME corroborated by SEC filings"). Prioritize insights from users with apparent expertise (e.g., those sharing charts or historical data). Format as a bulleted list with ticker, insight type, rationale, and an attached supporting message excerpt (select the most direct or detailed one).
+
+5. **Community Conviction**: Rank tickers by conviction strength (high/medium/low) based on metrics like mention volume, engagement (likes/replies), depth of analysis (e.g., detailed TA vs. memes), and influencer input (e.g., verified traders or high-follower accounts). For high-conviction tickers, note consensus drivers (e.g., "Strong bullish conviction on SPY due to 80% of detailed posts predicting S&P 500 breakout") and attach 1-2 excerpts from conviction-building threads.
+
+6. **Executive Summary**: A concise 3-sentence overview capturing the pulse of the discussions: (1) Dominant tickers and sentiment; (2) Core catalysts or risks; (3) Top trade opportunity or caution. Keep it under 100 words for quick scanning, with 1-2 inline attachments for punchy evidence.
+
+Ensure the summary is neutral, objective, and forward-looking where the data supports it. If data is ambiguous, flag it (e.g., "Limited bearish counterpoints") and attach a contrasting message. End with a "Watchlist Recommendation": 2-3 tickers to monitor based on conviction and volatility signals, each with a brief attached rationale excerpt.
+
+Example Attachment Style: "Bullish on TSLA due to EV momentum [Attachment: 'Volume spike at $248 support—target $280 by EOW' – TraderPro, 2025-10-01]."
 
 Format your response as JSON with this structure:
 {{
@@ -117,7 +126,7 @@ Be concise, factual, and focused on actionable information. If sentiment is uncl
 def analyze_with_gemini(
     messages: list[dict[str, Any]], 
     basic_stats: dict[str, Any],
-    model_name: str = "gemini-2.0-flash-001"
+    model_name: str = "gemini-2.0-flash-exp"
 ) -> dict[str, Any]:
     """
     Use Gemini to analyze trading discussions and generate insights.
@@ -125,7 +134,7 @@ def analyze_with_gemini(
     Args:
         messages: List of message dictionaries
         basic_stats: Basic statistics from analyze_messages()
-        model_name: Gemini model to use (flash or pro)
+        model_name: Gemini model to use (pro)
         
     Returns:
         Dictionary with AI-generated analysis

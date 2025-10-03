@@ -33,9 +33,11 @@ def load_settings() -> Settings:
     if since_str:
         since = datetime.fromisoformat(since_str).replace(tzinfo=timezone.utc)
     else:
-        # default: start of current UTC day
+        # default: last 24 hours (for daily job runs)
+        # This ensures we capture a full day's messages
+        from datetime import timedelta
         now = datetime.now(timezone.utc)
-        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        since = now - timedelta(hours=24)
 
     return Settings(
         token=token,

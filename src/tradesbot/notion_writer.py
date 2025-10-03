@@ -26,7 +26,8 @@ def create_summary_page(
     database_id: str | None = None
 ) -> dict[str, str]:
     """
-    Create a new Notion page in the database with summary content.
+    Create or update a Notion page in the database with summary content.
+    If a page for this date already exists, it will be updated instead of creating a duplicate.
     
     Args:
         basic_stats: Basic statistics from analyze_messages()
@@ -45,25 +46,47 @@ def create_summary_page(
     try:
         client = get_notion_client()
         
+        # Check if a page for this date already exists
+        existing_page = _find_existing_page(client, database_id, date)
+        
         # Build page properties
         properties = _build_properties(basic_stats, ai_analysis, date)
         
         # Build page content (blocks)
         blocks = _build_content_blocks(basic_stats, ai_analysis, date)
         
-        log.info(f"Creating Notion page for {date}...")
-        
-        # Create the page
-        response = client.pages.create(
-            parent={"database_id": database_id},
-            properties=properties,
-            children=blocks
-        )
-        
-        page_id = response["id"]
-        page_url = response["url"]
-        
-        log.info(f"Created Notion page: {page_url}")
+        if existing_page:
+            # Delete existing page and create a new one (faster than updating all blocks)
+            page_id = existing_page["id"]
+            log.info(f"Deleting and recreating Notion page for {date}...")
+            
+            # Delete the old page
+            client.pages.update(page_id=page_id, archived=True)
+            
+            # Create new page
+            response = client.pages.create(
+                parent={"database_id": database_id},
+                properties=properties,
+                children=blocks
+            )
+            
+            page_id = response["id"]
+            page_url = response["url"]
+            log.info(f"Recreated Notion page: {page_url}")
+        else:
+            # Create new page
+            log.info(f"Creating new Notion page for {date}...")
+            
+            response = client.pages.create(
+                parent={"database_id": database_id},
+                properties=properties,
+                children=blocks
+            )
+            
+            page_id = response["id"]
+            page_url = response["url"]
+            
+            log.info(f"Created Notion page: {page_url}")
         
         return {
             "page_id": page_id,
@@ -72,8 +95,39 @@ def create_summary_page(
         }
         
     except Exception as e:
-        log.error(f"Failed to create Notion page: {e}", exc_info=True)
+        log.error(f"Failed to create/update Notion page: {e}", exc_info=True)
         raise
+
+
+def _find_existing_page(client: Client, database_id: str, date: str) -> dict[str, Any] | None:
+    """
+    Search for an existing page with the given date in the database.
+    
+    Returns:
+        Page object if found, None otherwise
+    """
+    try:
+        # Query database for pages with matching date
+        response = client.databases.query(
+            database_id=database_id,
+            filter={
+                "property": "Date",
+                "date": {
+                    "equals": date
+                }
+            }
+        )
+        
+        results = response.get("results", [])
+        if results:
+            log.info(f"Found existing page for {date}")
+            return results[0]  # Return first match
+        
+        return None
+        
+    except Exception as e:
+        log.warning(f"Error searching for existing page: {e}")
+        return None
 
 
 def _build_properties(
@@ -313,11 +367,18 @@ def _build_content_blocks(
         })
         
         for insight in ai_analysis["notable_insights"]:
+            # Handle both string and dict formats
+            if isinstance(insight, dict):
+                # Format dict as a readable string
+                insight_text = f"{insight.get('ticker', 'N/A')}: {insight.get('rationale', str(insight))}"
+            else:
+                insight_text = str(insight)
+            
             blocks.append({
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": insight}}]
+                    "rich_text": [{"type": "text", "text": {"content": insight_text}}]
                 }
             })
     

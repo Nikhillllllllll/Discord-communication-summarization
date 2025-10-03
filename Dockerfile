@@ -15,4 +15,5 @@ COPY scripts ./scripts
 
 ENV PYTHONPATH=/app/src
 
+# Default to ingestion, but can be overridden for summarization
 CMD ["python", "-m", "tradesbot.main"]
