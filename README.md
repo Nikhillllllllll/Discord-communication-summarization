@@ -4,11 +4,13 @@ AI-powered Discord message analyzer that collects trading discussions, extracts 
 
 ## Overview
 
-This project provides an automated pipeline for:
-1. **Ingesting** Discord messages from trading channels
+This project provides a **fully automated daily pipeline** for:
+1. **Ingesting** Discord messages from trading channels (last 24h)
 2. **Storing** cleaned data in Google Cloud Storage
-3. **Analyzing** discussions with AI to extract sentiment, themes, and insights
-4. **Generating** structured summaries in multiple formats
+3. **Analyzing** discussions with Gemini AI to extract sentiment, themes, and insights
+4. **Generating** structured summaries and **publishing to Notion**
+
+**Runs automatically every night at 2:00 AM ET** via Cloud Scheduler. Set it and forget it!
 
 ---
 
@@ -210,43 +212,122 @@ TICKER ANALYSIS
 
 ---
 
-## Deployment
+## Automated Deployment ✅
 
-### Deploy as Cloud Run Job
+### Full Setup Guide
 
-```bash
-# Build container
-gcloud builds submit --tag gcr.io/YOUR_PROJECT/discord-trades-mvp
+See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive step-by-step deployment instructions.
 
-# Deploy ingestion job
-gcloud run jobs deploy discord-ingestion \
-  --region us-central1 \
-  --image gcr.io/YOUR_PROJECT/discord-trades-mvp \
-  --set-env-vars="DISCORD_BOT_TOKEN=..." \
-  --set-secrets="DISCORD_BOT_TOKEN=discord-token:latest"
+### Quick Overview
 
-# Deploy summarizer job
-gcloud run jobs deploy discord-summarizer \
-  --region us-central1 \
-  --image gcr.io/YOUR_PROJECT/discord-trades-mvp \
-  --set-env-vars="GCS_BUCKET=...,GCP_PROJECT_ID=..." \
-  --command="python,-m,tradesbot.summarizer_io"
+**Architecture:**
+- **Cloud Run Jobs**: Containerized ingestion and summarization
+- **Cloud Scheduler**: Daily automated execution
+- **Secret Manager**: Secure credential storage
+- **GCS**: Data storage and caching
+
+**Daily Schedule (Eastern Time):**
+```
+2:00 AM → Discord Ingestion (last 24h messages → GCS)
+2:30 AM → AI Summarization (Gemini analysis → Notion + GCS)
 ```
 
-### Schedule Daily Execution
+### Deploy to Google Cloud
+
+1. **Build and Push Container**
+   ```bash
+   gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/discord-trades-mvp --project YOUR_PROJECT_ID
+   ```
+
+2. **Create Secrets**
+   ```bash
+   # Discord bot token (no trailing newlines!)
+   echo "YOUR_DISCORD_TOKEN" | gcloud secrets create discord-bot-token --data-file=- --project YOUR_PROJECT_ID
+   
+   # Notion credentials (optional)
+   echo "YOUR_NOTION_TOKEN" | gcloud secrets create notion-api-token --data-file=- --project YOUR_PROJECT_ID
+   echo "YOUR_DATABASE_ID" | gcloud secrets create notion-database-id --data-file=- --project YOUR_PROJECT_ID
+   ```
+
+3. **Deploy Ingestion Job**
+   ```bash
+   gcloud run jobs create discord-ingestion \
+     --region=us-central1 \
+     --image=gcr.io/YOUR_PROJECT_ID/discord-trades-mvp \
+     --service-account=run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+     --set-env-vars="GCS_BUCKET=your-bucket,CHANNEL_IDS=123456789" \
+     --set-secrets="DISCORD_BOT_TOKEN=discord-bot-token:latest" \
+     --task-timeout=15m \
+     --project YOUR_PROJECT_ID
+   ```
+
+4. **Deploy Summarizer Job**
+   ```bash
+   gcloud run jobs create discord-summarizer \
+     --region=us-central1 \
+     --image=gcr.io/YOUR_PROJECT_ID/discord-trades-mvp \
+     --service-account=run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+     --set-env-vars="GCS_BUCKET=your-bucket,GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=us-central1" \
+     --set-secrets="NOTION_API_TOKEN=notion-api-token:latest,NOTION_DATABASE_ID=notion-database-id:latest" \
+     --task-timeout=10m \
+     --command="python" \
+     --args="-m,tradesbot.summarizer_io,--save-to-notion" \
+     --project YOUR_PROJECT_ID
+   ```
+
+5. **Grant IAM Permissions**
+   ```bash
+   # Allow jobs to be invoked by scheduler
+   gcloud run jobs add-iam-policy-binding discord-ingestion \
+     --region=us-central1 \
+     --member="serviceAccount:run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/run.invoker" \
+     --project YOUR_PROJECT_ID
+   
+   gcloud run jobs add-iam-policy-binding discord-summarizer \
+     --region=us-central1 \
+     --member="serviceAccount:run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/run.invoker" \
+     --project YOUR_PROJECT_ID
+   
+   # Grant GCS access
+   gcloud storage buckets add-iam-policy-binding gs://your-bucket \
+     --member="serviceAccount:run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/storage.objectUser" \
+     --project YOUR_PROJECT_ID
+   ```
+
+6. **Schedule Daily Execution**
+   ```bash
+   # Ingestion at 2:00 AM ET
+   gcloud scheduler jobs create http discord-ingestion-daily \
+     --location=us-central1 \
+     --schedule="0 2 * * *" \
+     --time-zone="America/New_York" \
+     --uri="https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/YOUR_PROJECT_ID/jobs/discord-ingestion:run" \
+     --http-method=POST \
+     --oauth-service-account-email="run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --project YOUR_PROJECT_ID
+   
+   # Summarizer at 2:30 AM ET (30 min after ingestion)
+   gcloud scheduler jobs create http discord-summarizer-daily \
+     --location=us-central1 \
+     --schedule="30 2 * * *" \
+     --time-zone="America/New_York" \
+     --uri="https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/YOUR_PROJECT_ID/jobs/discord-summarizer:run" \
+     --http-method=POST \
+     --oauth-service-account-email="run-jobs-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --project YOUR_PROJECT_ID
+   ```
+
+### Manual Execution
 
 ```bash
-# Schedule ingestion (2 AM daily)
-gcloud scheduler jobs create http ingest-discord-daily \
-  --schedule="0 2 * * *" \
-  --uri="https://..." \
-  --http-method=POST
+# Trigger ingestion manually
+gcloud run jobs execute discord-ingestion --region=us-central1 --project YOUR_PROJECT_ID
 
-# Schedule summarizer (3 AM daily, after ingestion)
-gcloud scheduler jobs create http summarize-discord-daily \
-  --schedule="0 3 * * *" \
-  --uri="https://..." \
-  --http-method=POST
+# Trigger summarizer manually
+gcloud run jobs execute discord-summarizer --region=us-central1 --project YOUR_PROJECT_ID
 ```
 
 ---
@@ -342,9 +423,10 @@ gcloud auth application-default login
 - ✅ GCS storage with JSONL format
 - ✅ AI-powered summarization with Gemini
 - ✅ Multi-format output (JSON, Markdown, TXT)
-- 🔄 Automatic cleanup of raw files (optional)
+- ✅ Notion database integration
+- ✅ Automated daily execution via Cloud Scheduler
+- 🔄 Automatic cleanup of old raw files
 - 🔄 Weekly rollup summaries
-- 🔄 Notion integration for viewing
 - 🔄 Slack/Email notifications
 - 🔄 Custom watchlist alerts
 
